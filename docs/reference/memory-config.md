@@ -30,7 +30,7 @@ automatic flush), see [Memory](/concepts/memory).
 - Local mode uses node-llama-cpp and may require `pnpm approve-builds`.
 - Uses sqlite-vec (when available) to accelerate vector search inside SQLite.
 - `memorySearch.provider = "ollama"` is also supported for local/self-hosted
-  Ollama embeddings (`/api/embeddings`), but it is not auto-selected.
+  Ollama embeddings (`/api/embeddings`, `/api/embed`), but it is not auto-selected.
 
 Remote embeddings **require** an API key for the embedding provider. OpenClaw
 resolves keys from auth profiles, `models.providers.*.apiKey`, or environment
