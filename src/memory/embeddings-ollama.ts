@@ -74,6 +74,7 @@ export async function createOllamaEmbeddingProvider(
 ): Promise<{ provider: EmbeddingProvider; client: OllamaEmbeddingClient }> {
   const client = resolveOllamaEmbeddingClient(options);
   const embedUrl = `${client.baseUrl.replace(/\/$/, "")}/api/embeddings`;
+  const embedBatchUrl = `${client.baseUrl.replace(/\/$/, "")}/api/embed`;
 
   const embedOne = async (text: string): Promise<number[]> => {
     const json = await withRemoteHttpResponse({
@@ -97,13 +98,45 @@ export async function createOllamaEmbeddingProvider(
     return sanitizeAndNormalizeEmbedding(json.embedding);
   };
 
+  const embedBatchNative = async (texts: string[]): Promise<number[][]> => {
+    const json = await withRemoteHttpResponse({
+      url: embedBatchUrl,
+      ssrfPolicy: client.ssrfPolicy,
+      init: {
+        method: "POST",
+        headers: client.headers,
+        body: JSON.stringify({ model: client.model, input: texts }),
+      },
+      onResponse: async (res) => {
+        if (!res.ok) {
+          throw new Error(`Ollama embed HTTP ${res.status}: ${await res.text()}`);
+        }
+        return (await res.json()) as { embeddings?: number[][] };
+      },
+    });
+    if (!Array.isArray(json.embeddings)) {
+      throw new Error(`Ollama embed response missing embeddings[][]`);
+    }
+    return json.embeddings.map(sanitizeAndNormalizeEmbedding);
+  };
+
+  const embedBatchFallback = async (texts: string[]): Promise<number[][]> => {
+    // Fallback to sequential requests if /api/embed is not available
+    return await Promise.all(texts.map(embedOne));
+  };
+
   const provider: EmbeddingProvider = {
     id: "ollama",
     model: client.model,
     embedQuery: embedOne,
     embedBatch: async (texts: string[]) => {
-      // Ollama /api/embeddings accepts one prompt per request.
-      return await Promise.all(texts.map(embedOne));
+      // Try the native batch endpoint first, fall back to sequential if needed
+      try {
+        return await embedBatchNative(texts);
+      } catch {
+        // If /api/embed fails, fall back to sequential /api/embeddings
+        return await embedBatchFallback(texts);
+      }
     },
   };
 
